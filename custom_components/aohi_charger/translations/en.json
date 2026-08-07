@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "country": "Country"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password",
+      "cannot_connect": "Failed to connect to the AOHI cloud service"
+    },
+    "abort": {
+      "already_configured": "This account is already configured"
+    }
+  }
+}
