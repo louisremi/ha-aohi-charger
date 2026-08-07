@@ -9,9 +9,14 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower, UnitOfTemperature
+from homeassistant.const import (
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    UnitOfPower,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -28,6 +33,7 @@ def _build_entities(
     ]
     entities.append(AohiTemperatureSensor(coordinator, sn, device))
     entities.append(AohiTotalPowerSensor(coordinator, sn, device))
+    entities.append(AohiSignalStrengthSensor(coordinator, sn, device))
     return entities
 
 
@@ -129,3 +135,25 @@ class AohiTotalPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
         status = self.coordinator.data.get(self._sn)
         # Unlike per-port power, allPower is already reported in whole watts.
         return status.get("allPower") if status else None
+
+
+class AohiSignalStrengthSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
+    """WiFi signal strength (RSSI) of the charger."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Signal Strength"
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
+        super().__init__(coordinator)
+        self._sn = sn
+        self._attr_unique_id = f"{sn}_rssi"
+        self._attr_device_info = device_info(sn, device)
+
+    @property
+    def native_value(self) -> float | None:
+        status = self.coordinator.data.get(self._sn)
+        return status.get("rssi") if status else None

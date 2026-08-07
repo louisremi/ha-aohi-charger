@@ -57,7 +57,11 @@ class AohiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         status: dict[str, dict[str, Any]] = {}
         try:
             for sn in self.devices:
-                status[sn] = await self.client.async_get_status(sn)
+                # cmd:3 (status) and cmd:5 (device/WiFi info, e.g. rssi) don't
+                # share any keys, so they're merged into one status dict per device.
+                device_status = await self.client.async_get_status(sn)
+                device_info = await self.client.async_get_device_info(sn)
+                status[sn] = {**device_status, **device_info}
         except AohiApiError as err:
             raise UpdateFailed(str(err)) from err
         return status

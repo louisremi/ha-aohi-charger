@@ -245,6 +245,11 @@ class AohiApiClient:
         reply = await self._async_request(sn, request_cmd=3, reply_cmd=3)
         return reply.get("result", {})
 
+    async def async_get_device_info(self, sn: str) -> dict:
+        """Fetch device/WiFi info (vendor, firmware, SSID, RSSI) for one device."""
+        reply = await self._async_request(sn, request_cmd=5, reply_cmd=5)
+        return reply.get("result", {})
+
     async def async_set_whole_power(self, sn: str, on: bool) -> None:
         """Turn the entire charger on or off."""
         await self._async_request(

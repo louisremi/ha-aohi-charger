@@ -6,6 +6,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -17,12 +18,18 @@ from .coordinator import AohiCoordinator
 
 def device_info(sn: str, device: dict[str, Any]) -> DeviceInfo:
     """Build the shared HA device entry for one charger."""
+    connections = set()
+    if mac := device.get("mac"):
+        connections.add((dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac)))
+
     return DeviceInfo(
         identifiers={(DOMAIN, sn)},
+        connections=connections,
         name=device.get("name") or sn,
         manufacturer="AOHI",
         model=device.get("model"),
         sw_version=device.get("version"),
+        serial_number=sn,
     )
 
 
