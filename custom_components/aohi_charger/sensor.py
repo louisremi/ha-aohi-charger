@@ -27,6 +27,7 @@ def _build_entities(
         AohiPortPowerSensor(coordinator, sn, device, port) for port in ALL_PORTS
     ]
     entities.append(AohiTemperatureSensor(coordinator, sn, device))
+    entities.append(AohiTotalPowerSensor(coordinator, sn, device))
     return entities
 
 
@@ -106,3 +107,25 @@ class AohiTemperatureSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
     def native_value(self) -> float | None:
         status = self.coordinator.data.get(self._sn)
         return status.get("batTemp") if status else None
+
+
+class AohiTotalPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
+    """Total output power across all ports."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Total Power"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+
+    def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
+        super().__init__(coordinator)
+        self._sn = sn
+        self._attr_unique_id = f"{sn}_total_power"
+        self._attr_device_info = device_info(sn, device)
+
+    @property
+    def native_value(self) -> float | None:
+        status = self.coordinator.data.get(self._sn)
+        # Unlike per-port power, allPower is already reported in whole watts.
+        return status.get("allPower") if status else None
