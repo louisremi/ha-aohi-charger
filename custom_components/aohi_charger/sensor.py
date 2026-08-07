@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower
+from homeassistant.const import UnitOfPower, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -23,7 +23,11 @@ from .switch import device_info
 def _build_entities(
     coordinator: AohiCoordinator, sn: str, device: dict[str, Any]
 ) -> list[SensorEntity]:
-    return [AohiPortPowerSensor(coordinator, sn, device, port) for port in ALL_PORTS]
+    entities: list[SensorEntity] = [
+        AohiPortPowerSensor(coordinator, sn, device, port) for port in ALL_PORTS
+    ]
+    entities.append(AohiTemperatureSensor(coordinator, sn, device))
+    return entities
 
 
 async def async_setup_entry(
@@ -81,3 +85,24 @@ class AohiPortPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
                 # The device reports power in centiwatts (e.g. 9947 == 99.47W).
                 return power / 100 if power is not None else None
         return None
+
+
+class AohiTemperatureSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
+    """Internal temperature of the charger."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Temperature"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+    def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
+        super().__init__(coordinator)
+        self._sn = sn
+        self._attr_unique_id = f"{sn}_temperature"
+        self._attr_device_info = device_info(sn, device)
+
+    @property
+    def native_value(self) -> float | None:
+        status = self.coordinator.data.get(self._sn)
+        return status.get("batTemp") if status else None
