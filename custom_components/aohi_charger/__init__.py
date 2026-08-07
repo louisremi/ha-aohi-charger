@@ -13,7 +13,7 @@ from .coordinator import AohiCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["switch", "sensor"]
+PLATFORMS = ["switch", "sensor", "select"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

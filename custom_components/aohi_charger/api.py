@@ -251,6 +251,12 @@ class AohiApiClient:
             sn, request_cmd=6, reply_cmd=4, extra={"state": {"poweron": on}}
         )
 
+    async def async_set_mode(self, sn: str, mode: int) -> None:
+        """Switch the charger between its Turbo/Smart/Custom charging modes."""
+        await self._async_request(
+            sn, request_cmd=6, reply_cmd=4, extra={"state": {"mode": mode}}
+        )
+
     async def async_set_port_power(self, sn: str, port_name: str, on: bool) -> None:
         """Turn a single port on or off, mirroring the app's exact payload shape."""
         key = "cPorts" if port_name.startswith("C") else "aPorts"

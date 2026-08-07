@@ -16,6 +16,11 @@ CPORTS = ("C1", "C2", "C3", "C4")
 APORTS = ("A1", "A2")
 ALL_PORTS = CPORTS + APORTS
 
+# Charging mode, as shown in the app's mode picker on the device screen.
+# The exact behavioral difference between them isn't documented by AOHI;
+# these are just the labels the app itself uses.
+MODES = {1: "Turbo", 2: "Smart", 3: "Custom"}
+
 
 def signal_new_device(entry_id: str) -> str:
     """Dispatcher signal fired when a new device is discovered under this entry."""
