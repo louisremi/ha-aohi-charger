@@ -15,7 +15,6 @@ from collections import defaultdict
 from typing import Any
 
 import paho.mqtt.client as mqtt
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
