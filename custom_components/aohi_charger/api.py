@@ -138,7 +138,10 @@ class AohiApiClient:
 
         client.ws_set_options(path=MQTT_WS_PATH)
         client.username_pw_set(username, password)
-        client.tls_set_context(ssl.create_default_context())
+        # ssl.create_default_context() reads and parses the system CA bundle
+        # from disk, which is a blocking operation the event loop disallows.
+        ssl_context = await self._hass.async_add_executor_job(ssl.create_default_context)
+        client.tls_set_context(ssl_context)
 
         loop = self._hass.loop
         self._mqtt_connected.clear()
