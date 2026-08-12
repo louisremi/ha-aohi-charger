@@ -60,10 +60,25 @@ That is the make-or-break question for local control without owning a domain, an
 how you answer it:
 
 - **Device connects** → plain transport is fine; local control needs nothing but a LAN IP.
-- **Device never connects** → TLS is mandatory, so a local setup needs a real domain plus a
-  CA-signed certificate (e.g. Let's Encrypt via DNS-01 with the record pointing at a private IP).
+- **Device never connects** → TLS is mandatory, and the next question becomes which CA it trusts.
 
 Either way you learn the answer definitively, and the log tells you exactly how far it got.
+
+### If TLS turns out to be mandatory
+
+A Let's Encrypt certificate is a normal publicly-trusted CA-signed certificate and should qualify.
+The awkward parts are the domain and the trust store, not the CA:
+
+- Certificates are issued for **names**, so `192.168.1.100` is out. You need a domain you control,
+  a DNS-01 challenge, and an A record pointing at your LAN IP — plus renewal automation.
+- Keep the hostname short: the URL field holds **38 characters**, so `wss://aohi.example.com/ws/`
+  fits while `wss://aohi.myname.duckdns.org:443/ws/iot1/` does not.
+- **Unknown: which roots the device trusts.** Both published firmware dumps contain no certificate
+  material at all — the dumped HC32F460 is only the UI/charging MCU, and it reaches the network
+  over UART through a **BK7231N** WiFi module whose firmware has never been dumped. The CA bundle
+  lives there. Embedded devices often ship a small, frozen bundle, so a valid Let's Encrypt cert
+  could still be rejected if ISRG Root X1 isn't in it.
+- There is at least **no pinning** (per atc1441), so if one issuer is rejected another may work.
 
 ## Warnings
 
