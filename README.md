@@ -13,7 +13,13 @@ model `AOC-C022`).
 - Config flow setup (email / password / country — the same credentials as the AOHI app)
 - One master **Power** switch per charger
 - One switch per USB port (`C1`-`C4`, `A1`-`A2`)
-- One power sensor (W) per USB port
+- A **Charging Mode** selector (Turbo / Smart / Custom)
+- Sensors:
+  - power (W) per USB port
+  - total output power (W)
+  - device temperature (°C)
+  - WiFi signal strength (dBm, diagnostic)
+- Serial number and MAC address shown on the device info page
 - Automatically picks up additional chargers added to your AOHI account later — no restart
   needed, just pair the new device in the AOHI app and it shows up as a new device in
   Home Assistant within about 30 seconds

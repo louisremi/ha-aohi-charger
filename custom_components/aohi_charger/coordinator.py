@@ -1,6 +1,7 @@
 """Data update coordinator for the AOHI Smart Charger integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
@@ -54,14 +55,35 @@ class AohiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             await self.client.async_subscribe_devices(list(new_devices))
             async_dispatcher_send(self.hass, self._signal_new_device, new_devices)
 
-        status: dict[str, dict[str, Any]] = {}
+        sns = list(self.devices)
         try:
-            for sn in self.devices:
-                # cmd:3 (status) and cmd:5 (device/WiFi info, e.g. rssi) don't
-                # share any keys, so they're merged into one status dict per device.
-                device_status = await self.client.async_get_status(sn)
-                device_info = await self.client.async_get_device_info(sn)
-                status[sn] = {**device_status, **device_info}
+            results = await asyncio.gather(*(self._async_device_data(sn) for sn in sns))
         except AohiApiError as err:
             raise UpdateFailed(str(err)) from err
-        return status
+        return dict(zip(sns, results, strict=True))
+
+    async def _async_device_data(self, sn: str) -> dict[str, Any]:
+        """Fetch one device's status, enriched with its device/WiFi info.
+
+        cmd:3 (status) and cmd:5 (device/WiFi info) use separate pending keys
+        and locks, so they're safe to issue concurrently. They share no keys,
+        so the replies merge cleanly into one dict.
+        """
+        device_status, device_info = await asyncio.gather(
+            self.client.async_get_status(sn),
+            self._async_device_info_or_empty(sn),
+        )
+        return {**device_status, **device_info}
+
+    async def _async_device_info_or_empty(self, sn: str) -> dict[str, Any]:
+        """Return cmd:5 device info, or {} if this device doesn't answer it.
+
+        cmd:5 only feeds the diagnostic signal-strength sensor, so a device
+        that doesn't support it (other AOHI/I4SEASON models, older firmware)
+        must not take the whole integration down.
+        """
+        try:
+            return await self.client.async_get_device_info(sn)
+        except AohiApiError as err:
+            _LOGGER.debug("Device %s did not answer cmd:5 device info: %s", sn, err)
+            return {}

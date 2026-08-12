@@ -112,6 +112,9 @@ class AohiTemperatureSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
     @property
     def native_value(self) -> float | None:
         status = self.coordinator.data.get(self._sn)
+        # Despite the "bat" name (this charger has no battery), batTemp is the
+        # device's own temperature in whole degrees Celsius -- live captures
+        # showed 27 idle and 32 under load, consistent with room temperature.
         return status.get("batTemp") if status else None
 
 
@@ -134,6 +137,8 @@ class AohiTotalPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
     def native_value(self) -> float | None:
         status = self.coordinator.data.get(self._sn)
         # Unlike per-port power, allPower is already reported in whole watts.
+        # Verified against a live capture: allPower was 99 while the only
+        # active port (C2) reported power 9947, i.e. 99.47 W.
         return status.get("allPower") if status else None
 
 
