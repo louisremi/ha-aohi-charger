@@ -1,0 +1,15 @@
+services:
+  capture:
+    build: .
+    container_name: aohi-capture
+    # Host networking so the charger can reach this directly on your LAN.
+    # On macOS/Windows Docker Desktop, swap this for the ports mapping below.
+    network_mode: host
+    # ports:
+    #   - "8080:8080"
+    environment:
+      PORT: "8080"
+      LOG_DIR: "/logs"
+    volumes:
+      - ./logs:/logs
+    restart: unless-stopped

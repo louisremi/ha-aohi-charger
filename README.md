@@ -65,6 +65,21 @@ dynamically from the device's own status payload — but only 6-port (`C1-C4` + 
 chargers have actually been tested. Please open an issue (ideally with a packet capture) if you
 try it on something else.
 
+## Experimental: local control research
+
+The integration above needs AOHI's cloud. [`tools/`](tools/) holds early, **entirely optional**
+research towards running without it, based on [atc1441's finding][atc] that the charger can be
+told over BLE to talk to a different server:
+
+- a Web Bluetooth tool to repoint the charger (and put it back), and
+- a capture server that logs what the charger says, so the protocol can be worked out.
+
+Neither has been tested against real hardware yet, and there's an unresolved question about
+whether the firmware will accept an unencrypted local endpoint at all. **Nothing here is required
+for normal use** — read [`tools/README.md`](tools/README.md) before touching it.
+
+[atc]: https://github.com/atc1441/AOHi_280W_Charger_Hacking
+
 ## Contributing
 
 Issues and pull requests are welcome. If you're reverse-engineering a related AOHI/I4SEASON

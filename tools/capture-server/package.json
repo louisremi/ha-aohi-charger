@@ -1,0 +1,13 @@
+{
+  "name": "aohi-capture-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Diagnostic server that logs what an AOHI charger sends when pointed away from the official cloud",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

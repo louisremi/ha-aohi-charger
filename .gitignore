@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# capture-server (tools/) — local runtime artefacts.
+# Captures can contain credentials and WiFi SSIDs; never commit them.
+node_modules/
+tools/capture-server/logs/
