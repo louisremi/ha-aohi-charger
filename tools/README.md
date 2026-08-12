@@ -20,8 +20,13 @@ principle it could be pointed at a server on your own LAN instead.
 | [`aohi-ble-provisioning.html`](aohi-ble-provisioning.html) | Web Bluetooth tool to read the charger's config, point it at a custom endpoint, and restore the official one. |
 | [`capture-server/`](capture-server/) | Docker container that impersonates the cloud and logs whatever the charger sends. |
 
-The provisioning tool is a single static file. Open it locally in Chrome/Edge, or use the
-published copy (Web Bluetooth requires HTTPS or `file://`).
+The provisioning tool is a single static file with no dependencies. Web Bluetooth needs a secure
+context, so either open your local copy directly (`file://`) or use the published one:
+
+**https://louisremi.github.io/ha-aohi-charger/tools/aohi-ble-provisioning.html**
+
+It runs entirely in your browser and talks only to the charger over Bluetooth — nothing is sent
+anywhere.
 
 ## Status: unverified
 

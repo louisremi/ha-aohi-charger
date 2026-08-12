@@ -370,9 +370,10 @@ async function send(cmd, payload=[]){
   log('tx','TX '+hex(frame).toUpperCase(), describe(frame));
 }
 
+/** Returns true only if the frame actually went out. */
 async function sendLogged(cmd, payload=[], label=''){
-  try{ await send(cmd, payload); if(label) log('info',label); }
-  catch(e){ log('err','Send failed: '+e.message); }
+  try{ await send(cmd, payload); if(label) log('info',label); return true; }
+  catch(e){ log('err','Send failed: '+e.message); return false; }
 }
 
 /* ---------- step 2: reads ---------- */
@@ -381,9 +382,11 @@ function markRead(){
   $('btnBackup').disabled = false;
   $('cardWrite').classList.remove('disabled');
 }
-$('btnInfo').onclick   = async()=>{ await sendLogged(CMD.INFO,[],  'Requested device info');   markRead(); };
-$('btnWifi').onclick   = async()=>{ await sendLogged(CMD.WIFI_CFG,[],'Requested WiFi config'); markRead(); };
-$('btnStatus').onclick = async()=>{ await sendLogged(CMD.STATUS,[], 'Requested status');       markRead(); };
+// Only unlock writing if a read genuinely succeeded — a failed send means we
+// have no idea whether we're really talking to the charger.
+$('btnInfo').onclick   = async()=>{ if(await sendLogged(CMD.INFO,[],  'Requested device info'))   markRead(); };
+$('btnWifi').onclick   = async()=>{ if(await sendLogged(CMD.WIFI_CFG,[],'Requested WiFi config')) markRead(); };
+$('btnStatus').onclick = async()=>{ if(await sendLogged(CMD.STATUS,[], 'Requested status'))       markRead(); };
 
 $('btnBackup').onclick = ()=>{
   const blob = new Blob([JSON.stringify({
@@ -448,9 +451,17 @@ async function writeCloud(h1,h2,h3,what){
   }catch(e){ log('err','Write failed: '+e.message); }
 }
 
-$('btnSet').onclick = ()=> writeCloud(
-  $('host1').value.trim(), $('host2').value.trim(), $('host3').value.trim(),
-  'Point the charger at a CUSTOM endpoint?');
+$('btnSet').onclick = ()=>{
+  const h1 = $('host1').value.trim(), h2 = $('host2').value.trim();
+  // Writing blank fields would store 117 zero bytes and leave the charger with no
+  // server at all — almost certainly worse than any endpoint. Refuse.
+  if(!h1 || !h2){
+    log('err','host1 and host2 are both required — writing empty URLs would wipe the ' +
+              'charger\'s server configuration entirely. Use "Restore" to go back to stock.');
+    return;
+  }
+  writeCloud(h1, h2, $('host3').value.trim(), 'Point the charger at a CUSTOM endpoint?');
+};
 
 $('btnRestore').onclick = ()=> writeCloud(
   STOCK_HOST1, $('optAltRestore').checked ? STOCK_HOST2_ALT : STOCK_HOST2, '',
