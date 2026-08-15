@@ -49,6 +49,17 @@ Both must be ≤38 characters, which a LAN IP satisfies comfortably.
 Weather is served from static values (`WEATHER_CITY`, `WEATHER_TZ`, `WEATHER_OFFSET`); it only
 feeds the charger's own display.
 
+## Checking it works
+
+```bash
+node check.js <host> [httpPort] [mqttPort]
+```
+
+Reports whether the server is reachable, which chargers have registered, and whether a real
+command round-trip succeeds. Run it first whenever something looks wrong — it distinguishes
+"server unreachable", "no charger provisioned" and "charger registered but not answering",
+which look alike from Home Assistant.
+
 ## Talking to it
 
 Topics and payloads are unchanged from the cloud, so anything that speaks the AOHI protocol works:
