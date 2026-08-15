@@ -137,12 +137,14 @@ With host1 set to `http://<lan-ip>:8099` and host2 to `ws://<lan-ip>:8099/ws/`, 
   `ClientHello`, nothing. Verified with a `clientError` handler that logs anything arriving on the
   port that isn't well-formed HTTP: 309 HTTP requests, zero others.
 
-Since it is not *attempting* the connection, this is not a TLS-rejection problem.
+Both conclusions drawn from that at the time turned out to be **wrong**, and are recorded here as a
+warning:
 
-The leading hypothesis is that **host2 was never stored**. The payload layout is assumed to be
-3 × 39-byte NUL-padded fields at offsets 0 / 39 / 78; host1 (offset 0) demonstrably takes effect,
-but nothing confirms host2 lands at offset 39. If it does not, the charger would hold an empty
-broker URL and would never try to connect — which is exactly what we observe.
+- *"Since it is not attempting the connection, this is not a TLS-rejection problem."* — false. It
+  was precisely a transport problem: the firmware discards a `ws://` URL without ever opening a
+  socket, so "refuses to use it" and "never stored it" produce identical evidence.
+- *"host2 was probably never stored, so the 3 × 39-byte offsets must be wrong."* — false. The
+  offsets are exactly as documented; host2 was stored correctly the whole time.
 
 This was resolved by provisioning host1, host2 and host3 to **three different ports** in one
 reprovision, with raw TCP listeners on the latter two. host2's port immediately received a TLS
