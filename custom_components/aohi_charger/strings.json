@@ -2,19 +2,38 @@
   "config": {
     "step": {
       "user": {
+        "title": "How are your chargers reachable?",
+        "menu_options": {
+          "cloud": "AOHI account (cloud)",
+          "local": "Local server (no cloud)"
+        }
+      },
+      "cloud": {
+        "title": "AOHI account",
+        "description": "Use the same credentials as the AOHI mobile app.",
         "data": {
           "email": "Email",
           "password": "Password",
           "country": "Country"
         }
+      },
+      "local": {
+        "title": "Local server",
+        "description": "Address of your AOHI local server. Chargers must already be provisioned to it over Bluetooth.",
+        "data": {
+          "host": "Host or IP address",
+          "http_port": "HTTP port",
+          "mqtt_port": "MQTT (WSS) port"
+        }
       }
     },
     "error": {
       "invalid_auth": "Invalid email or password",
-      "cannot_connect": "Failed to connect to the AOHI cloud service"
+      "cannot_connect": "Could not connect. Check the address and that the server is running.",
+      "no_devices": "Connected, but no chargers have registered with that server yet."
     },
     "abort": {
-      "already_configured": "This account is already configured"
+      "already_configured": "This account or server is already configured"
     }
   }
 }

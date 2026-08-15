@@ -22,6 +22,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     API_BASE_URL,
+    MODE_LOCAL,
     MQTT_HOST,
     MQTT_PORT,
     MQTT_REQUEST_TIMEOUT,
@@ -43,13 +44,30 @@ class AohiApiClient:
     """Wraps AOHI's REST login/device-list calls and the MQTT control channel."""
 
     def __init__(
-        self, hass: HomeAssistant, email: str, password: str, country: str
+        self,
+        hass: HomeAssistant,
+        email: str = "",
+        password: str = "",
+        country: str = "",
+        *,
+        mode: str = "cloud",
+        host: str = "",
+        http_port: int = 0,
+        mqtt_port: int = 0,
     ) -> None:
         self._hass = hass
         self._session = async_get_clientsession(hass)
         self._email = email
         self._password = password
         self._country = country
+
+        # Local mode talks to tools/local-server instead of AOHI's cloud. The
+        # MQTT half of this class is identical either way -- same topics, same
+        # payloads -- so only connection setup and discovery branch.
+        self._mode = mode
+        self._host = host
+        self._http_port = http_port
+        self._mqtt_port = mqtt_port
 
         self.access_token: str | None = None
         self.user_id: int | None = None
@@ -76,8 +94,17 @@ class AohiApiClient:
 
     # -- REST -----------------------------------------------------------
 
+    @property
+    def is_local(self) -> bool:
+        """True when this client talks to a local server rather than the cloud."""
+        return self._mode == MODE_LOCAL
+
     async def async_login(self) -> None:
-        """Authenticate and store the access token."""
+        """Authenticate and store the access token. A no-op in local mode."""
+        if self.is_local:
+            # The local server authenticates nobody; there is no account.
+            self.user_id = 0
+            return
         try:
             async with self._session.post(
                 f"{API_BASE_URL}/iot1/user/login",
@@ -143,7 +170,10 @@ class AohiApiClient:
         raise AohiApiError(f"failed to {what}")   # unreachable, keeps type checkers happy
 
     async def async_get_devices(self) -> list[dict[str, Any]]:
-        """Return the flat list of devices across all of the account's rooms."""
+        """Return every charger this entry can see."""
+        if self.is_local:
+            return await self._async_get_local_devices()
+
         data = await self._async_get_authed("/iot1/device/list", "list devices")
 
         devices: list[dict[str, Any]] = []
@@ -151,8 +181,51 @@ class AohiApiClient:
             devices.extend(room.get("devices", []))
         return devices
 
+    async def _async_get_local_devices(self) -> list[dict[str, Any]]:
+        """Ask the local server which chargers have registered with it.
+
+        Chargers self-register when they connect, because their MQTT client id
+        is ``dev_<serial>``. The reply carries far less than the cloud's device
+        list -- no model, firmware or friendly name -- so those are filled in
+        afterwards from the device's own cmd:5 reply.
+        """
+        url = f"http://{self._host}:{self._http_port}/local/devices"
+        try:
+            async with self._session.get(url) as resp:
+                data = await resp.json(content_type=None)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            raise AohiApiError(f"cannot reach the local server at {url}: {err}") from err
+
+        if data.get("code") != 0:
+            raise AohiApiError(data.get("msg") or "local server rejected the request")
+
+        return [
+            {"sn": d["sn"], "name": f"AOHI {d['sn'][-6:]}", "model": None, "version": None}
+            for d in data.get("data") or []
+            if d.get("sn")
+        ]
+
+    async def async_enrich_local_devices(self, devices: dict[str, dict[str, Any]]) -> None:
+        """Fill in model and firmware from each device's cmd:5 reply.
+
+        Only meaningful in local mode, and only worth doing once at setup, since
+        the values are static. Failures are tolerated: a missing model is
+        cosmetic, and refusing to set up over it would be worse.
+        """
+        for sn, device in devices.items():
+            try:
+                info = await self.async_get_device_info(sn)
+            except AohiApiError as err:
+                _LOGGER.debug("Could not read device info for %s: %s", sn, err)
+                continue
+            device["model"] = info.get("p") or device.get("model")
+            device["version"] = info.get("ver") or device.get("version")
+
     async def async_get_mqtt_credentials(self) -> tuple[str, str]:
         """Fetch the (username, password) pair used to authenticate on the MQTT broker."""
+        if self.is_local:
+            # The local broker accepts anything; send something identifiable.
+            return self._client_id, self._client_id
         data = await self._async_get_authed("/iot1/mqtt/userinfo", "get mqtt credentials")
         return data["data"]["username"], data["data"]["password"]
 
@@ -176,6 +249,12 @@ class AohiApiClient:
                 client_id=client_id, transport="websockets", reconnect_on_failure=True
             )
 
+        # Local servers use a self-signed certificate -- the charger does not
+        # verify it either -- so hostname/CA checks are switched off for them.
+        # This is a LAN connection to a server the user configured by hand.
+        host = self._host if self.is_local else MQTT_HOST
+        port = self._mqtt_port if self.is_local else MQTT_PORT
+
         client.ws_set_options(path=MQTT_WS_PATH)
         client.username_pw_set(username, password)
         # paho backs off up to 120s between reconnect attempts by default, which
@@ -185,6 +264,9 @@ class AohiApiClient:
         # ssl.create_default_context() reads and parses the system CA bundle
         # from disk, which is a blocking operation the event loop disallows.
         ssl_context = await self._hass.async_add_executor_job(ssl.create_default_context)
+        if self.is_local:
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
         client.tls_set_context(ssl_context)
 
         loop = self._hass.loop
@@ -221,9 +303,7 @@ class AohiApiClient:
         client.on_disconnect = on_disconnect
         client.on_message = on_message
 
-        await self._hass.async_add_executor_job(
-            client.connect, MQTT_HOST, MQTT_PORT, 60
-        )
+        await self._hass.async_add_executor_job(client.connect, host, port, 60)
         client.loop_start()
         self._mqtt_client = client
 
@@ -232,7 +312,8 @@ class AohiApiClient:
                 self._mqtt_connected.wait(), timeout=MQTT_REQUEST_TIMEOUT
             )
         except asyncio.TimeoutError as err:
-            raise AohiApiError("Timed out connecting to the AOHI MQTT broker") from err
+            where = f"local broker at {host}:{port}" if self.is_local else "AOHI MQTT broker"
+            raise AohiApiError(f"Timed out connecting to the {where}") from err
 
     async def async_subscribe_devices(self, device_sns: list[str]) -> None:
         """Subscribe to topics for devices discovered after the initial connect."""

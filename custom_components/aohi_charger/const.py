@@ -4,6 +4,20 @@ DOMAIN = "aohi_charger"
 
 CONF_COUNTRY = "country"
 
+# A config entry is either a cloud account or a local server; the two are
+# separate entries so one charger can stay on the cloud while another runs
+# locally.
+CONF_MODE = "mode"
+MODE_CLOUD = "cloud"
+MODE_LOCAL = "local"
+
+CONF_HOST = "host"
+CONF_HTTP_PORT = "http_port"
+CONF_MQTT_PORT = "mqtt_port"
+
+DEFAULT_HTTP_PORT = 8099
+DEFAULT_MQTT_PORT = 8098
+
 API_BASE_URL = "https://iotservice.iaohi.com"
 MQTT_HOST = "iotservice.iaohi.com"
 MQTT_WS_PATH = "/ws/iot1/"

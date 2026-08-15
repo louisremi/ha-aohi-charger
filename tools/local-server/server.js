@@ -165,7 +165,18 @@ function attachBroker(wss) {
     });
 
     ws.on('close', () => {
-      if (client.id && clients.get(client.id) === client) clients.delete(client.id);
+      // A reconnecting charger briefly has two sockets: the new CONNECT closes
+      // the old one, so this fires for a connection that has already been
+      // replaced. Everything here must therefore be a no-op unless this socket
+      // is still the live one, or a stale close would mark a perfectly healthy
+      // charger offline and publish a bogus will.
+      const superseded = client.id && clients.get(client.id) !== client;
+      if (superseded) {
+        vlog(`ignoring close of superseded connection for ${client.id}`);
+        return;
+      }
+      if (client.id) clients.delete(client.id);
+
       const sn = client.id && client.id.startsWith('dev_') ? client.id.slice(4) : null;
       if (sn && devices.has(sn)) devices.get(sn).online = false;
       // An unexpected drop publishes the will, which is how the charger's
