@@ -101,7 +101,7 @@ class AohiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         try:
             return await network.async_get_source_ip(self.hass) or ""
-        except Exception:  # noqa: BLE001 - a failed guess must not block setup
+        except Exception:  # a failed guess must not block setup
             _LOGGER.debug("Could not determine this machine's address", exc_info=True)
             return ""
 
