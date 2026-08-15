@@ -20,6 +20,11 @@ principle it could be pointed at a server on your own LAN instead.
 | [`aohi-ble-provisioning.html`](aohi-ble-provisioning.html) | Web Bluetooth tool to read the charger's config, point it at a custom endpoint, and restore the official one. |
 | [`capture-server/`](capture-server/) | Docker container that impersonates the cloud and logs whatever the charger sends. |
 
+To actually *run* a charger locally, use the
+**[AOHI Local Server add-on](https://github.com/louisremi/ha-aohi-local-server)**, which installs
+into Home Assistant. The capture server here is a diagnostic for protocol work, not something to
+depend on.
+
 The provisioning tool is a single static file with no dependencies. Web Bluetooth needs a secure
 context, so either open your local copy directly (`file://`) or use the published one:
 

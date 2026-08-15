@@ -106,6 +106,9 @@ so the certificate's IP SAN is what matters, not its CN.
 
 ## Local control: working
 
+> Implemented as the [AOHI Local Server add-on](https://github.com/louisremi/ha-aohi-local-server).
+> What follows is what that add-on has to do, and why.
+
 With host1 on plain HTTP and host2 on TLS, the charger completes the whole chain and connects:
 
 ```

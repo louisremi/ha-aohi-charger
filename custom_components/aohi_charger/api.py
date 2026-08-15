@@ -61,7 +61,8 @@ class AohiApiClient:
         self._password = password
         self._country = country
 
-        # Local mode talks to tools/local-server instead of AOHI's cloud. The
+        # Local mode talks to the AOHI Local Server add-on instead of AOHI's cloud
+        # (github.com/louisremi/ha-aohi-local-server). The
         # MQTT half of this class is identical either way -- same topics, same
         # payloads -- so only connection setup and discovery branch.
         self._mode = mode
