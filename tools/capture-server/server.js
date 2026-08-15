@@ -13,6 +13,7 @@
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -197,7 +198,14 @@ function mqttReply(buf) {
 
 /* ---------------------------------------------------------------- HTTP ---- */
 
-const server = http.createServer((req, res) => {
+// The charger's REST leg is happy over plain HTTP, but the MQTT leg insists on
+// wss:// -- it will not open a plain ws:// connection at all. Set TLS_CERT and
+// TLS_KEY to serve HTTPS/WSS instead.
+const TLS_CERT = process.env.TLS_CERT;
+const TLS_KEY = process.env.TLS_KEY;
+const useTls = Boolean(TLS_CERT && TLS_KEY);
+
+const requestHandler = (req, res) => {
   const chunks = [];
   req.on('data', c => chunks.push(c));
   req.on('end', () => {
@@ -277,7 +285,24 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify(payload));
   });
-});
+};
+
+const server = useTls
+  ? https.createServer(
+      { cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) },
+      requestHandler)
+  : http.createServer(requestHandler);
+
+if (useTls) {
+  // Surface handshake failures explicitly: "the charger rejected our certificate"
+  // and "the charger never connected" look identical without this.
+  server.on('tlsClientError', (err, sock) => {
+    log(`!! TLS handshake FAILED from ${sock.remoteAddress}: ${err.code || err.message}`);
+  });
+  server.on('secureConnection', (sock) => {
+    log(`** TLS handshake OK from ${sock.remoteAddress} (${sock.getProtocol()}, ${(sock.getCipher()||{}).name})`);
+  });
+}
 
 /* ----------------------------------------------------------- WebSocket ---- */
 
@@ -325,7 +350,7 @@ server.on('connect', (req, socket) => {
 });
 
 server.listen(PORT, () => {
-  log(`AOHI capture server listening on 0.0.0.0:${PORT}`);
+  log(`AOHI capture server listening on 0.0.0.0:${PORT} (${useTls ? 'TLS' : 'plain'})`);
   log(`  HTTP  -> point host1 at  http://<this-machine-ip>:${PORT}`);
   log(`  WS    -> point host2 at  ws://<this-machine-ip>:${PORT}/ws/`);
   log(`  Logging to ${logFile || "stdout only"}`);

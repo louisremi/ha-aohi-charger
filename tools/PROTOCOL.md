@@ -89,13 +89,46 @@ Steps 3 and 4 continue on a loop for as long as the charger is running.
 
 ## Transport
 
-**The REST leg does not require TLS.** The charger completed the entire chain above against a plain
-`http://` server on a LAN IP, with no certificate involved. atc1441's note that a CA-signed
-certificate is required applies to serving *HTTPS*; it does not force TLS on you.
+The two legs have **different** transport requirements, which cost some confusion to establish:
 
-Whether the **MQTT leg** requires `wss://` is still unknown — see below.
+| Leg | Requirement |
+|---|---|
+| host1 (REST) | plain `http://` is fine — no TLS, no certificate |
+| host2 (MQTT) | **`wss://` is mandatory.** Given `ws://` the charger opens no socket at all — silently, with no connection attempt, which is easily mistaken for "the URL was never stored" |
 
-## Open problem: the charger never contacts host2
+**A self-signed certificate is accepted.** This contradicts atc1441's note that self-signed certs
+are rejected; on firmware 1.0.16 the charger completed a TLS 1.2 handshake (`AES256-SHA256`)
+against a self-signed cert carrying an IP SAN, and went straight on to MQTT. **No domain and no
+certificate authority are needed** — `openssl req -x509` against your LAN IP is enough.
+
+The `ClientHello` offers only legacy RSA suites and sends **no SNI** (expected for an IP literal),
+so the certificate's IP SAN is what matters, not its CN.
+
+## Local control: working
+
+With host1 on plain HTTP and host2 on TLS, the charger completes the whole chain and connects:
+
+```
+TLS handshake OK from 192.168.1.35 (TLSv1.2, AES256-SHA256)
+WEBSOCKET OPEN /ws/iot1/
+MQTT CONNECT protocol=MQIsdp level=3 keepalive=30s
+             clientId="dev_<serial>"
+             willTopic="lwt/I4SEASON/<serial>"
+```
+
+Note it speaks **MQTT 3.1 (`MQIsdp`, protocol level 3)**, not the 3.1.1 the app uses.
+
+It then subscribes to:
+
+- `dev/I4SEASON/<serial>/command/request` (qos 1) — where commands are sent, as with the cloud
+- `dev/I4SEASON/<serial>/weather/reply` (qos 0) — not seen from the app side
+- `dev/time/sync` (qos 0) — not seen from the app side
+
+and publishes its LWT plus a continuous stream on `dev/I4SEASON/<serial>/command/reply`, in exactly
+the payload format the integration already parses — `cmd:1` presence, `cmd:5` device info, and the
+partial `cmd:4` telemetry frames.
+
+## Historical note: why this looked impossible for a while
 
 With host1 set to `http://<lan-ip>:8099` and host2 to `ws://<lan-ip>:8099/ws/`, the charger:
 
@@ -111,16 +144,14 @@ The leading hypothesis is that **host2 was never stored**. The payload layout is
 but nothing confirms host2 lands at offset 39. If it does not, the charger would hold an empty
 broker URL and would never try to connect — which is exactly what we observe.
 
-Ways to test, cheapest first:
+This was resolved by provisioning host1, host2 and host3 to **three different ports** in one
+reprovision, with raw TCP listeners on the latter two. host2's port immediately received a TLS
+`ClientHello`; host3's received nothing. That established in a single reset that host2 is stored
+exactly where assumed, that `wss://` is required, and that host3 is unused.
 
-1. Provision with host1 pointing at one port and host2 at a **different** port on the same machine.
-   If the charger contacts only the first, host2 is definitively not being read from where we think.
-2. Try alternative layouts for the second field (different offsets, or a
-   length-prefixed rather than fixed-width encoding).
-3. Try host2 spellings closer to stock: keep the `:443`, use the `/ws/iot1/` path, or `wss://`.
-
-Each attempt costs a factory reset plus a BLE reprovision, so it is worth batching several
-variants into one session rather than iterating one at a time.
+The lesson worth keeping: a silent absence of connections is ambiguous evidence. Distinguishing
+"never stored" from "stored but unusable" needed an experiment where the two predict *different*
+observations, not more staring at the same log.
 
 ## Restoring a charger
 
