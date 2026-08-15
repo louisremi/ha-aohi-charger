@@ -1,0 +1,18 @@
+services:
+  aohi-local:
+    build: .
+    container_name: aohi-local-server
+    # Host networking so chargers on your LAN can reach it directly.
+    network_mode: host
+    environment:
+      # Required: the address your chargers use to reach this machine.
+      # It is baked into the certificate's IP SAN.
+      LAN_IP: "${LAN_IP:?set LAN_IP to this machine's LAN address}"
+      HTTP_PORT: "8099"
+      MQTT_PORT: "8098"
+      WEATHER_CITY: "${WEATHER_CITY:-Local}"
+      WEATHER_TZ: "${WEATHER_TZ:-UTC}"
+      WEATHER_OFFSET: "${WEATHER_OFFSET:-0}"
+    volumes:
+      - ./certs:/certs
+    restart: unless-stopped

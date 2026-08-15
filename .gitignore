@@ -6,3 +6,9 @@ __pycache__/
 # Captures can contain credentials and WiFi SSIDs; never commit them.
 node_modules/
 tools/capture-server/logs/
+
+# TLS material is generated per install and must never be committed:
+# a shared private key would be identical for every user.
+tools/**/tls/
+tools/**/certs/
+*.pem

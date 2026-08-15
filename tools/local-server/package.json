@@ -1,0 +1,9 @@
+{
+  "name": "aohi-local-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run AOHI chargers entirely locally: bootstrap endpoints plus an MQTT broker",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}
