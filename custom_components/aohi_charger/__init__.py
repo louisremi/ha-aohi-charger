@@ -31,7 +31,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(str(err)) from err
 
     coordinator = AohiCoordinator(hass, client, devices_by_sn, entry.entry_id)
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception:
+        # The MQTT client is already connected and running its network thread by
+        # this point. Without this, a failed first refresh would leak it and HA's
+        # setup retry would stack up another live connection every attempt.
+        await client.async_disconnect()
+        raise
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 

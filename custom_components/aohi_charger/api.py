@@ -15,6 +15,7 @@ from collections import defaultdict
 from typing import Any
 from uuid import uuid4
 
+import aiohttp
 import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -100,18 +101,50 @@ class AohiApiClient:
     def _auth_headers(self) -> dict[str, str]:
         return {"authorization": f"Bearer {self.access_token}", "language": "en"}
 
-    async def async_get_devices(self) -> list[dict[str, Any]]:
-        """Return the flat list of devices across all of the account's rooms."""
+    async def _async_get_authed(self, path: str, what: str) -> dict:
+        """GET an authenticated endpoint, logging in again if the token has gone stale.
+
+        Tokens last 7 days and there is no refresh endpoint, so without the retry
+        the integration would break permanently once one expired, until someone
+        reloaded it by hand.
+        """
         if not self.access_token:
             await self.async_login()
 
-        async with self._session.get(
-            f"{API_BASE_URL}/iot1/device/list", headers=self._auth_headers()
-        ) as resp:
-            data = await resp.json(content_type=None)
+        for attempt in (1, 2):
+            try:
+                async with self._session.get(
+                    f"{API_BASE_URL}{path}", headers=self._auth_headers()
+                ) as resp:
+                    status = resp.status
+                    data = await resp.json(content_type=None)
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+                # Covers network blips and non-JSON bodies (an upstream 502 page,
+                # say). Raised as AohiApiError so the coordinator treats it as a
+                # normal retryable update failure rather than an unexpected crash.
+                raise AohiApiError(f"failed to {what}: {err}") from err
 
-        if data.get("code") != 0:
-            raise AohiApiError(data.get("msg", "failed to list devices"))
+            # An expired token comes back as HTTP 200 with {"code":-1,
+            # "msg":"login needed"}, not a 401, so the code check is what
+            # actually catches it; the status check is just belt and braces.
+            if status not in (401, 403) and data.get("code") == 0:
+                return data
+
+            if attempt == 1:
+                _LOGGER.debug(
+                    "Re-authenticating after failed %s (status %s, body %s)",
+                    what, status, data,
+                )
+                await self.async_login()
+                continue
+
+            raise AohiApiError(data.get("msg") or f"failed to {what}")
+
+        raise AohiApiError(f"failed to {what}")   # unreachable, keeps type checkers happy
+
+    async def async_get_devices(self) -> list[dict[str, Any]]:
+        """Return the flat list of devices across all of the account's rooms."""
+        data = await self._async_get_authed("/iot1/device/list", "list devices")
 
         devices: list[dict[str, Any]] = []
         for room in data.get("data") or []:
@@ -120,14 +153,7 @@ class AohiApiClient:
 
     async def async_get_mqtt_credentials(self) -> tuple[str, str]:
         """Fetch the (username, password) pair used to authenticate on the MQTT broker."""
-        async with self._session.get(
-            f"{API_BASE_URL}/iot1/mqtt/userinfo", headers=self._auth_headers()
-        ) as resp:
-            data = await resp.json(content_type=None)
-
-        if data.get("code") != 0:
-            raise AohiApiError(data.get("msg", "failed to get mqtt credentials"))
-
+        data = await self._async_get_authed("/iot1/mqtt/userinfo", "get mqtt credentials")
         return data["data"]["username"], data["data"]["password"]
 
     # -- MQTT -------------------------------------------------------------
@@ -152,6 +178,10 @@ class AohiApiClient:
 
         client.ws_set_options(path=MQTT_WS_PATH)
         client.username_pw_set(username, password)
+        # paho backs off up to 120s between reconnect attempts by default, which
+        # is far longer than a poll interval: one dropped connection would leave
+        # every entity unavailable for minutes. Keep retries brisk.
+        client.reconnect_delay_set(min_delay=1, max_delay=30)
         # ssl.create_default_context() reads and parses the system CA bundle
         # from disk, which is a blocking operation the event loop disallows.
         ssl_context = await self._hass.async_add_executor_job(ssl.create_default_context)
@@ -173,6 +203,15 @@ class AohiApiClient:
             loop.call_soon_threadsafe(self._mqtt_connected.set)
 
         def on_disconnect(client, userdata, rc):
+            # Logged loudly on purpose: a silent drop here is indistinguishable
+            # from a device problem, and it is the first thing worth knowing when
+            # entities go unavailable. paho reconnects automatically afterwards.
+            if rc != 0:
+                _LOGGER.warning(
+                    "AOHI MQTT connection lost (rc=%s); reconnecting automatically", rc
+                )
+            else:
+                _LOGGER.debug("AOHI MQTT disconnected cleanly")
             loop.call_soon_threadsafe(self._mqtt_connected.clear)
 
         def on_message(client, userdata, msg):
@@ -262,6 +301,21 @@ class AohiApiClient:
     ) -> dict:
         if not self._mqtt_client:
             raise AohiApiError("MQTT client not connected")
+
+        # paho reconnects on its own, but publishing mid-reconnect drops the
+        # message silently and we'd then wait out the full reply timeout and fail
+        # the whole update, briefly marking every entity unavailable. Wait for the
+        # link to come back instead of firing into a closed socket.
+        if not self._mqtt_connected.is_set():
+            _LOGGER.debug("MQTT link is down; waiting for reconnect before sending")
+            try:
+                await asyncio.wait_for(
+                    self._mqtt_connected.wait(), timeout=MQTT_REQUEST_TIMEOUT
+                )
+            except asyncio.TimeoutError as err:
+                raise AohiApiError(
+                    "MQTT connection is down and did not come back in time"
+                ) from err
 
         async with self._locks[(sn, reply_cmd)]:
             loop = self._hass.loop
