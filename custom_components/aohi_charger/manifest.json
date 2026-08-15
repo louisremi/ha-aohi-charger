@@ -1,11 +1,18 @@
 {
   "domain": "aohi_charger",
   "name": "AOHI Smart Charger",
-  "codeowners": ["@louisremi"],
+  "codeowners": [
+    "@louisremi"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "network"
+  ],
   "documentation": "https://github.com/louisremi/ha-aohi-charger",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/louisremi/ha-aohi-charger/issues",
-  "requirements": ["paho-mqtt>=1.6.0,<3.0.0"],
+  "requirements": [
+    "paho-mqtt>=1.6.0,<3.0.0"
+  ],
   "version": "1.0.4"
 }

@@ -19,7 +19,7 @@
       },
       "local": {
         "title": "Local server",
-        "description": "Address of your AOHI local server. Chargers must already be provisioned to it over Bluetooth.",
+        "description": "Where the AOHI Local Server is running. This defaults to this machine, which is correct if you installed the add-on here. Chargers must already be provisioned to it over Bluetooth.",
         "data": {
           "host": "Host or IP address",
           "http_port": "HTTP port",

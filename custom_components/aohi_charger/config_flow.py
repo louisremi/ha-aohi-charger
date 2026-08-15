@@ -6,6 +6,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components import network
 from homeassistant.config_entries import ConfigFlowResult
 
 from .api import AohiApiClient, AohiApiError, AohiAuthError
@@ -32,13 +33,15 @@ STEP_CLOUD_SCHEMA = vol.Schema(
     }
 )
 
-STEP_LOCAL_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): str,
-        vol.Required(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): int,
-        vol.Required(CONF_MQTT_PORT, default=DEFAULT_MQTT_PORT): int,
-    }
-)
+def local_schema(default_host: str = "") -> vol.Schema:
+    """Schema for the local step, pre-filled with the detected host."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_HOST, default=default_host): str,
+            vol.Required(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): int,
+            vol.Required(CONF_MQTT_PORT, default=DEFAULT_MQTT_PORT): int,
+        }
+    )
 
 
 class AohiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -88,6 +91,20 @@ class AohiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="cloud", data_schema=STEP_CLOUD_SCHEMA, errors=errors
         )
 
+    async def _async_default_host(self) -> str:
+        """Where the local server most likely is.
+
+        The usual setup is the AOHI Local Server add-on installed alongside
+        Home Assistant. It uses host networking, so it listens on this machine's
+        own LAN address -- which is what this returns. Anyone running it
+        elsewhere can simply type over the suggestion.
+        """
+        try:
+            return await network.async_get_source_ip(self.hass) or ""
+        except Exception:  # noqa: BLE001 - a failed guess must not block setup
+            _LOGGER.debug("Could not determine this machine's address", exc_info=True)
+            return ""
+
     async def async_step_local(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -123,6 +140,8 @@ class AohiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data={**user_input, CONF_MODE: MODE_LOCAL},
                     )
 
+        # Keep whatever was typed on a retry, rather than resetting to the guess.
+        default_host = (user_input or {}).get(CONF_HOST) or await self._async_default_host()
         return self.async_show_form(
-            step_id="local", data_schema=STEP_LOCAL_SCHEMA, errors=errors
+            step_id="local", data_schema=local_schema(default_host), errors=errors
         )
