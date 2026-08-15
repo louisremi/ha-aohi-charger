@@ -13,6 +13,7 @@ import logging
 import ssl
 from collections import defaultdict
 from typing import Any
+from uuid import uuid4
 
 import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
@@ -58,6 +59,19 @@ class AohiApiClient:
         self._locks: dict[tuple[str, int], asyncio.Lock] = defaultdict(asyncio.Lock)
         self._latest_status: dict[str, dict] = {}
         self._known_sns: set[str] = set()
+
+        # Must not collide with anything else on AOHI's broker. The official app
+        # connects as "app_<user_id>", and MQTT requires the broker to evict the
+        # existing session whenever a second client claims the same id -- so
+        # reusing it made the integration and the phone app disconnect each other
+        # in a loop. Random per instance, so two HA installs can't clash either.
+        # Sessions are clean, so nothing stale is left behind on reconnect.
+        unique = uuid4().hex[:12]
+        self._client_id = f"ha-aohi-{unique}"
+        # Sent as the "user" field on requests. The device echoes it back on
+        # command acknowledgements, which is how we tell our own acks apart from
+        # the unsolicited telemetry it publishes on the same cmd number.
+        self._user_tag = f"ha_{unique}"
 
     # -- REST -----------------------------------------------------------
 
@@ -121,7 +135,7 @@ class AohiApiClient:
     async def async_connect_mqtt(self, device_sns: list[str]) -> None:
         """Open the shared MQTT-over-websocket connection and subscribe to device topics."""
         username, password = await self.async_get_mqtt_credentials()
-        client_id = f"app_{self.user_id}"
+        client_id = self._client_id
 
         try:
             client = mqtt.Client(
@@ -204,13 +218,40 @@ class AohiApiClient:
             return
         sn = parts[2]
         cmd = data.get("cmd")
+        result = data.get("result", {})
 
         if cmd == 3:
-            self._latest_status[sn] = data.get("result", {})
+            self._latest_status[sn] = result
+        elif cmd == 4:
+            # The device also pushes cmd:4 continuously, unprompted, carrying
+            # partial state ({"cPorts":[{"name":"C1","power":63}]}). Merge those
+            # into the cache so the port payloads we build stay current.
+            self._merge_partial_state(sn, result)
+
+        # cmd:4 is ambiguous: it is both the acknowledgement of a control command
+        # and the unsolicited telemetry above. Only our own acks echo our user
+        # tag (telemetry carries user ""), so without this check a passing
+        # telemetry frame would resolve a control request before the device had
+        # actually done anything. cmd:3/cmd:5 replies always carry user "",
+        # whatever we sent, so they can only be matched on the cmd number.
+        if cmd == 4 and data.get("user") != self._user_tag:
+            return
 
         fut = self._pending.pop((sn, cmd), None)
         if fut and not fut.done():
             fut.set_result(data)
+
+    def _merge_partial_state(self, sn: str, result: dict) -> None:
+        """Apply a partial telemetry update onto the cached status for one device."""
+        status = self._latest_status.setdefault(sn, {})
+        for key, value in result.items():
+            if key in ("cPorts", "aPorts") and isinstance(value, list):
+                ports = {p.get("name"): p for p in status.get(key, [])}
+                for update in value:
+                    ports.setdefault(update.get("name"), {}).update(update)
+                status[key] = list(ports.values())
+            else:
+                status[key] = value
 
     async def _async_request(
         self,
@@ -227,7 +268,7 @@ class AohiApiClient:
             fut: asyncio.Future = loop.create_future()
             self._pending[(sn, reply_cmd)] = fut
 
-            payload: dict[str, Any] = {"cmd": request_cmd, "user": f"app_{self.user_id}"}
+            payload: dict[str, Any] = {"cmd": request_cmd, "user": self._user_tag}
             if extra:
                 payload["data"] = extra
 
