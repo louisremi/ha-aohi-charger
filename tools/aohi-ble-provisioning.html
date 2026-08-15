@@ -86,8 +86,8 @@
       <label style="margin:0"><input type="checkbox" id="optAllDevices"> show all BLE devices</label>
     </div>
     <div class="sub" style="margin-top:8px">
-      Put the charger in pairing mode first. It advertises with a name starting
-      <code>7231N</code>; tick the box above if it doesn't appear.
+      Put the charger in pairing mode first. It advertises as <code>AOC-C022-&lt;xx&gt;</code>
+      (older units may use <code>7231N</code>); tick the box above if it doesn't appear.
     </div>
     <div class="kv" id="connInfo" hidden></div>
   </div>
@@ -125,8 +125,8 @@
     <div class="banner" style="margin-bottom:14px">
       Each URL is stored in a <b>39-byte field and must be ≤38 characters</b> (one byte is the
       terminator). The whole 126-byte frame must fit in a single BLE write, so this needs a
-      negotiated MTU of ~129+. Chrome normally negotiates 247. This tool
-      <b>refuses to fragment</b>: a partial write would store a corrupt URL.
+      negotiated MTU of ~129+. A real AOC-C022 negotiates 517, so this is not a
+      practical concern. This tool still <b>refuses to fragment</b>: a partial write would store a corrupt URL.
     </div>
 
     <label>host1 — REST base <span class="count" id="c1">0/38</span></label>
@@ -176,7 +176,9 @@ const $ = id => document.getElementById(id);
 const SVC_UUID    = '0000ffff-0000-1000-8000-00805f9b34fb';
 const WRITE_UUID  = '07af27a5-9c22-11ea-9afe-02fcdc4e7412';
 const NOTIFY_UUID = '00001234-0000-1000-8000-00805f9b34fb';
-const NAME_PREFIX = '7231N';
+// Observed on a real AOC-C022: it advertises as "AOC-C022-9a" (model + last
+// byte of the WiFi MAC), not the '7231N' the upstream tool filters on.
+const NAME_PREFIXES = ['AOC-', '7231N'];
 
 const CMD = { INFO:0x01, STATUS:0x03, WIFI_CFG:0x09, SET_CLOUD:0x10 };
 
@@ -301,7 +303,7 @@ async function connect(){
   try{
     const opts = $('optAllDevices').checked
       ? {acceptAllDevices:true, optionalServices:[SVC_UUID]}
-      : {filters:[{namePrefix:NAME_PREFIX}], optionalServices:[SVC_UUID]};
+      : {filters:NAME_PREFIXES.map(p=>({namePrefix:p})), optionalServices:[SVC_UUID]};
     device = await navigator.bluetooth.requestDevice(opts);
     log('info',`Selected "${device.name || '(unnamed)'}"`);
     device.addEventListener('gattserverdisconnected', onDisconnected);

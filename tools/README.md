@@ -28,18 +28,25 @@ context, so either open your local copy directly (`file://`) or use the publishe
 It runs entirely in your browser and talks only to the charger over Bluetooth — nothing is sent
 anywhere.
 
-## Status: unverified
+## Status: partially verified against real hardware
 
-Neither tool has been run against real hardware yet. Two things are known and unresolved:
+Both tools have now been run against a real AOC-C022. See **[PROTOCOL.md](PROTOCOL.md)** for the
+full findings. Headlines:
 
-1. **Plain `ws://` may not work.** atc1441 reports the firmware requires a CA-signed certificate
-   and rejects self-signed ones. Whether it accepts unencrypted transport is untested. If it
-   doesn't, local control needs a real domain and a valid certificate — which makes it much less
-   attractive. The capture server exists to settle this question.
-2. **Restore is best-effort.** No known command reads the current endpoint back, so "restore"
-   writes our best-known factory values rather than a verified backup. Worse, the real factory
-   host2 (`wss://iotservice.iaohi.com:443/ws/iot1/`) is 39 characters and the field only holds
-   38 — so the stored value must differ from the documented one, and we don't know how.
+- **The REST leg needs no TLS.** The charger completed its entire cloud bootstrap against a plain
+  `http://` server on a LAN IP. No domain, no certificate.
+- **The device-side bootstrap chain is mapped**: `device/login` → `device/mqtt/info` →
+  `time/second` + `weather/current`, with every response shape confirmed against AOHI's own cloud.
+- **Restore is straightforward after all**: factory reset and re-add in the app, which rewrites the
+  cloud hosts for you. The exact factory URLs never need to be known — which is just as well, since
+  no command reads them back.
+- **Still unsolved**: the charger never contacts host2 at all, so MQTT has not been reached. The
+  likely cause is that host2 is not stored where we think it is. See PROTOCOL.md for the next
+  experiments.
+
+Corrections to what these tools originally assumed: the charger advertises as **`AOC-C022-<xx>`**,
+not `7231N`; the negotiated **MTU is 517**, so no fragmentation risk; and the write characteristic
+is **write-with-response only**.
 
 ## Suggested order
 

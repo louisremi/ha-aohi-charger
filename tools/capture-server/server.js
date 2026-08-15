@@ -13,12 +13,23 @@
 'use strict';
 
 const http = require('http');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const LOG_DIR = process.env.LOG_DIR || '/logs';
+// Address the charger should use to reach us, when a reply needs to name us.
+const LAN_HINT = process.env.LAN_HINT || '127.0.0.1';
+// Cosmetic: the charger displays these on its screen.
+const WEATHER_CITY = process.env.WEATHER_CITY || 'France_Lyon';
+const WEATHER_TZ = process.env.WEATHER_TZ || 'Europe/Paris';
+const WEATHER_OFFSET = parseInt(process.env.WEATHER_OFFSET || '7200', 10);
+
+// Bootstrap state: token -> device serial, so mqtt/info knows who is asking.
+const tokens = new Map();
+let lastSn = '';
 
 let logFile = null;
 try {
@@ -197,14 +208,87 @@ const server = http.createServer((req, res) => {
 
     // Answer everything with a plausible-looking success envelope, mirroring the
     // {"code":0,"msg":"ok","data":...} shape the AOHI cloud uses.
+    // /iot1/device/login is the charger's bootstrap: it will not attempt the
+    // MQTT connection until this returns whatever it is looking for. The real
+    // response shape is unknown, so reply with a superset of plausible field
+    // names and let the firmware take what it needs -- unrecognised keys are
+    // almost certainly ignored. Narrow this down once the device progresses.
+    let payload = { code: 0, msg: 'ok', data: {} };
+    if (req.url.includes('/device/login')) {
+      let sent = {};
+      try { sent = JSON.parse(body.toString('utf8')); } catch { /* leave empty */ }
+      const sn = sent.deviceSn || '';
+      const cred = sent.clientId || 'aohi';
+      const secret = sent.clientSecret || 'aohi';
+      const uid = sent.bizuserId || '0';
+      // Exactly the shape the real AOHI cloud returns, confirmed by replaying a
+      // charger's own captured credentials against it. An earlier attempt that
+      // padded this with extra plausible keys was rejected, so keep it verbatim.
+      const token = crypto.createHash('sha1')
+        .update(sn + ':' + secret).digest('hex');   // 40 hex chars, as upstream
+      tokens.set(token, sn);
+      lastSn = sn || lastSn;
+      payload = { code: 0, msg: 'ok', data: {
+        access_token: token,
+        expires_in: 604800,
+        scope: 'all',
+        token_type: 'Bearer',
+      } };
+      log(`  -> replied to device/login (sn=${sn}, uid=${uid}, client=${cred})`);
+    }
+    // Second step of the bootstrap: the charger asks for its broker credentials
+    // before it will open the WebSocket. Shape confirmed against the real cloud.
+    // We own the broker and accept anything, so the values are ours to choose --
+    // only the shape and the dev_<sn> client id convention matter.
+    if (req.url.includes('/device/mqtt/info')) {
+      const auth = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const sn = tokens.get(auth) || lastSn || '';
+      payload = { code: 0, msg: 'ok', data: {
+        clientId: `dev_${sn}`,
+        username: crypto.createHash('sha1').update('u:' + sn).digest('hex'),
+        password: crypto.createHash('sha1').update('p:' + sn).digest('hex'),
+      } };
+      log(`  -> replied to device/mqtt/info (sn=${sn}, clientId=dev_${sn})`);
+    }
+
+    // Time sync. Returns a bare Unix timestamp in `data`, not an object.
+    if (req.url.includes('/time/second')) {
+      payload = { code: 0, msg: 'ok', data: Math.floor(Date.now() / 1000) };
+    }
+
+    // The charger shows weather on its display, and pesters the server for it
+    // during bootstrap. Shape mirrored from the real cloud; the values are
+    // cosmetic, so serve something plausible rather than proxying a weather API.
+    if (req.url.includes('/weather/current')) {
+      payload = { code: 0, msg: 'ok', data: {
+        city: WEATHER_CITY,
+        condition: {
+          text: 'Sunny',
+          icon: '//cdn.weatherapi.com/weather/64x64/day/113.png',
+          code: 1000,
+        },
+        temp_c: 20.0,
+        temp_f: 68.0,
+        time_zone: WEATHER_TZ,
+        zone_offset: WEATHER_OFFSET,
+      } };
+    }
+
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ code: 0, msg: 'ok', data: {} }));
+    res.end(JSON.stringify(payload));
   });
 });
 
 /* ----------------------------------------------------------- WebSocket ---- */
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({
+  server,
+  // The charger requests Sec-WebSocket-Protocol: mqtt and the real broker echoes
+  // it back; without this the upgrade can be refused by the client. Never return
+  // false here -- that aborts the handshake, and a client offering no subprotocol
+  // (or an unexpected one) must still be allowed through so we can see it.
+  handleProtocols: (protocols) => (protocols && protocols.has('mqtt') ? 'mqtt' : undefined),
+});
 
 wss.on('connection', (ws, req) => {
   const peer = req.socket.remoteAddress;
@@ -227,6 +311,17 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', (code, reason) => log(`=== WEBSOCKET CLOSE ${peer} code=${code} reason="${reason}"`));
   ws.on('error', err => log(`=== WEBSOCKET ERROR ${peer}: ${err.message}`));
+});
+
+// Without these, anything that isn't well-formed HTTP is invisible -- including a
+// TLS ClientHello, which is exactly what we'd see if the charger insisted on
+// wss:// for the MQTT leg despite accepting plain http:// for the REST leg.
+server.on('clientError', (err, socket) => {
+  log(`!! non-HTTP data from ${socket.remoteAddress}: ${err.code || err.message}`);
+  try { socket.destroy(); } catch { /* already gone */ }
+});
+server.on('connect', (req, socket) => {
+  log(`!! HTTP CONNECT tunnel attempt from ${socket.remoteAddress} to ${req.url}`);
 });
 
 server.listen(PORT, () => {
