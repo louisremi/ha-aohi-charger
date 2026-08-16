@@ -4,8 +4,9 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
 from .api import AohiApiClient, AohiApiError
 from .const import (
@@ -66,8 +67,61 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
+    if not client.is_local:
+        _async_prune_stale_devices(hass, entry, set(devices_by_sn))
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+def _aohi_serials(device: dr.DeviceEntry) -> set[str]:
+    return {ident for domain, ident in device.identifiers if domain == DOMAIN}
+
+
+@callback
+def _async_prune_stale_devices(
+    hass: HomeAssistant, entry: ConfigEntry, known_sns: set[str]
+) -> None:
+    """Drop registry devices this entry no longer serves.
+
+    Cloud entries only. ``/iot1/device/list`` is authoritative, so a serial
+    missing from it has genuinely been removed from the account. The local
+    server instead reports whichever chargers have connected to it, so a
+    charger that is merely unplugged would vanish from that list -- and pruning
+    on it would silently delete the user's names, areas and automations.
+    """
+    registry = dr.async_get(hass)
+    # Materialised up front: removing a device mutates the registry's indexes.
+    for device in list(dr.async_entries_for_config_entry(registry, entry.entry_id)):
+        if _aohi_serials(device) & known_sns:
+            continue
+        _LOGGER.info(
+            "Removing %s from this AOHI account; it is no longer listed there",
+            device.name_by_user or device.name or device.id,
+        )
+        if device.config_entries == {entry.entry_id}:
+            registry.async_remove_device(device.id)
+        else:
+            # Shared with another AOHI entry -- typically the same charger part
+            # way through a move between cloud and local. Detach only our half.
+            registry.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow deleting a charger from its device page once we no longer serve it.
+
+    Without this, Home Assistant offers no delete button at all, so a charger
+    removed in the AOHI app (or permanently retired from the local server)
+    lingers in the UI with no way to clear it.
+    """
+    coordinator: AohiCoordinator | None = hass.data.get(DOMAIN, {}).get(
+        config_entry.entry_id
+    )
+    if coordinator is None:
+        return True
+    return not (_aohi_serials(device_entry) & coordinator.devices.keys())
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
