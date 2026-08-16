@@ -90,6 +90,14 @@ def _async_prune_stale_devices(
     charger that is merely unplugged would vanish from that list -- and pruning
     on it would silently delete the user's names, areas and automations.
     """
+    if not known_sns:
+        # An account that lists nothing is indistinguishable from a device list
+        # that came back empty by accident, and pruning on it would delete every
+        # charger here along with the user's names, areas and automations. Leave
+        # them; they can still be deleted by hand from the device page.
+        _LOGGER.debug("AOHI listed no devices; not pruning anything")
+        return
+
     registry = dr.async_get(hass)
     # Materialised up front: removing a device mutates the registry's indexes.
     for device in list(dr.async_entries_for_config_entry(registry, entry.entry_id)):
@@ -121,7 +129,15 @@ async def async_remove_config_entry_device(
     )
     if coordinator is None:
         return True
-    return not (_aohi_serials(device_entry) & coordinator.devices.keys())
+    serials = _aohi_serials(device_entry)
+    # Only what we still poll counts. A charger that has left the account keeps
+    # its entry in coordinator.devices so its entities survive, so testing that
+    # dict -- which is only ever added to -- would refuse every deletion for
+    # ever, including the ones this hook exists for.
+    if serials & coordinator.served_serials:
+        return False
+    coordinator.async_forget(serials)
+    return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

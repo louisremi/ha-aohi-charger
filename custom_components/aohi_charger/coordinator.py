@@ -6,7 +6,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -36,6 +36,27 @@ class AohiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.devices = devices
         self._signal_new_device = signal_new_device(entry_id)
         self._unlisted: set[str] = set()
+
+    @property
+    def served_serials(self) -> set[str]:
+        """Serials this entry actually polls: known to it, and still listed.
+
+        ``devices`` deliberately keeps a charger that has stopped being listed,
+        so its entities survive; this is the narrower "we are still serving it"
+        question the device page needs to answer.
+        """
+        return self.devices.keys() - self._unlisted
+
+    @callback
+    def async_forget(self, serials: set[str]) -> None:
+        """Drop devices the user has deleted from the device page.
+
+        Without this they stay in ``devices`` for ever, so a charger that comes
+        back later is not seen as new and never gets its entities rebuilt.
+        """
+        for sn in serials:
+            self.devices.pop(sn, None)
+            self._unlisted.discard(sn)
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         try:
