@@ -42,9 +42,19 @@ for the realtime channel, wired into Home Assistant's `DataUpdateCoordinator` fo
 
 ### HACS (recommended)
 
-1. In HACS, add this repository as a custom repository (category: Integration)
-2. Install "AOHI Smart Charger"
-3. Restart Home Assistant
+[![Open this repository inside your Home Assistant instance's Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=louisremi&repository=ha-aohi-charger&category=integration)
+
+The button opens this repository in HACS on your own Home Assistant. Install **AOHI Smart
+Charger**, then restart Home Assistant.
+
+If the button does nothing — it relies on
+[My Home Assistant](https://my.home-assistant.io/), which has to be enabled on your instance —
+add it by hand instead:
+
+1. In HACS, open the three-dot menu → **Custom repositories**
+2. Add `https://github.com/louisremi/ha-aohi-charger` with category **Integration**
+3. Install "AOHI Smart Charger"
+4. Restart Home Assistant
 
 ### Manual
 
@@ -54,8 +64,16 @@ for the realtime channel, wired into Home Assistant's `DataUpdateCoordinator` fo
 
 ## Configuration
 
-Settings → Devices & Services → Add Integration → search for "AOHI Smart Charger", then enter
-the same email, password, and country you use in the AOHI mobile app.
+[![Add the integration to your Home Assistant instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=aohi_charger)
+
+Or by hand: **Settings → Devices & Services → Add Integration →** search for "AOHI Smart Charger".
+
+You will be asked to choose between two modes:
+
+- **Cloud** — enter the same email, password and country you use in the AOHI mobile app.
+- **Local server** — for chargers pointed at the
+  [AOHI Local Server add-on](https://github.com/louisremi/ha-aohi-local-server) instead of AOHI's
+  cloud. The address is prefilled with the machine Home Assistant runs on.
 
 ## Supported devices
 
