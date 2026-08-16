@@ -22,26 +22,38 @@ Confirmed as documented by [atc1441](https://github.com/atc1441/AOHi_280W_Charge
 `0x55AA` framing, running-sum checksum, big-endian TX / little-endian RX lengths, the GATT UUIDs,
 and the `cmd 0x01` / `0x09` payload field offsets.
 
-**The charger only advertises BLE in pairing mode**, but reaching pairing mode is cheaper than
-first assumed: a **short button press is enough, and it preserves the stored configuration**. A
-charger put into pairing mode this way stays connected to whatever server it was already using,
-and can simply be rewritten. Only a full factory reset returns it to AOHI's cloud.
+**The charger only advertises BLE in pairing mode, and a factory reset is what makes a write
+stick.** A short button press also produces a BLE-advertising, connectable device that reads and
+acknowledges normally — but `SetCloudHost` written in that state is **accepted and then discarded**.
+Every provisioning experiment really does cost a full reset-and-re-add cycle.
 
-This supersedes the earlier note that every provisioning experiment costs a full reset-and-re-add
-cycle. It does not.
+This was established the expensive way. Two `SetCloudHost` writes were made after a short press,
+both acknowledged (see below), the second with known-good values. In between, the charger was
+power-cycled. It returned to its previous server every time, and the newly written host1 — plain
+HTTP, so no transport subtleties apply — was never contacted at all. A charger that had genuinely
+stored the new host1 would at minimum have attempted the REST bootstrap against it.
 
-**`SetCloudHost` (`0x10`) is acknowledged**, with an empty reply frame:
+> An earlier revision of this file claimed the opposite: that a short press preserves the
+> configuration and lets the endpoints simply be rewritten. That was inferred from the charger
+> staying on its old server, which is equally consistent with the write being ignored — and it
+> was. Left here because the mistaken reading is the tempting one.
+
+**`SetCloudHost` (`0x10`) is acknowledged regardless of whether it is honoured**, with an empty
+reply frame:
 
 ```
 TX  55 AA 01 07 10 00 00 75 <117-byte payload> FF
 RX  55 AA 00 00 10 00 00 00 0F                      cmd=0x10 len=0
 ```
 
-Worth waiting for — the acknowledgement is the only evidence the write landed.
+Worth waiting for, but **the acknowledgement does not mean the value was stored** — it is returned
+just the same when the write is subsequently discarded. It only proves the frame was well formed
+and reached the device.
 
-**New endpoints take effect only on reboot.** The charger keeps running its current session against
-the old server until power-cycled, so "nothing arrived at the new server" does not mean the write
-failed.
+**New endpoints take effect only on reboot**, so a charger that has not been power-cycled will
+still be talking to its old server. Combined with the above, "nothing arrived at the new server"
+has three distinct causes worth separating: not rebooted, rebooted but the write was discarded
+(no factory reset), or stored correctly but host2 was not `wss://`.
 
 **No command reads the current cloud host back.** `0x02, 0x06, 0x07, 0x08, 0x0A, 0x0B, 0x0D, 0x0E,
 0x0F, 0x11` were all probed with an empty payload and none replied. This was re-tested on firmware
