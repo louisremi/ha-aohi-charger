@@ -8,11 +8,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MODES, signal_new_device
 from .coordinator import AohiCoordinator
-from .switch import device_info
+from .entity import AohiEntity
 
 MODE_BY_NAME = {name: value for value, name in MODES.items()}
 
@@ -48,18 +47,15 @@ async def async_setup_entry(
     )
 
 
-class AohiModeSelect(CoordinatorEntity[AohiCoordinator], SelectEntity):
+class AohiModeSelect(AohiEntity, SelectEntity):
     """Charging mode selector (Turbo / Smart / Custom)."""
 
-    _attr_has_entity_name = True
     _attr_name = "Charging Mode"
     _attr_options: ClassVar[list[str]] = list(MODES.values())
 
     def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
-        super().__init__(coordinator)
-        self._sn = sn
+        super().__init__(coordinator, sn, device)
         self._attr_unique_id = f"{sn}_mode"
-        self._attr_device_info = device_info(sn, device)
 
     @property
     def current_option(self) -> str | None:

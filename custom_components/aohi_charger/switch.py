@@ -6,31 +6,12 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import ALL_PORTS, DOMAIN, signal_new_device
 from .coordinator import AohiCoordinator
-
-
-def device_info(sn: str, device: dict[str, Any]) -> DeviceInfo:
-    """Build the shared HA device entry for one charger."""
-    connections = set()
-    if mac := device.get("mac"):
-        connections.add((dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac)))
-
-    return DeviceInfo(
-        identifiers={(DOMAIN, sn)},
-        connections=connections,
-        name=device.get("name") or sn,
-        manufacturer="AOHI",
-        model=device.get("model"),
-        sw_version=device.get("version"),
-        serial_number=sn,
-    )
+from .entity import AohiEntity
 
 
 def _build_entities(
@@ -67,17 +48,14 @@ async def async_setup_entry(
     )
 
 
-class AohiWholeDeviceSwitch(CoordinatorEntity[AohiCoordinator], SwitchEntity):
+class AohiWholeDeviceSwitch(AohiEntity, SwitchEntity):
     """Master on/off switch for the whole charger."""
 
-    _attr_has_entity_name = True
     _attr_name = "Power"
 
     def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
-        super().__init__(coordinator)
-        self._sn = sn
+        super().__init__(coordinator, sn, device)
         self._attr_unique_id = f"{sn}_power"
-        self._attr_device_info = device_info(sn, device)
 
     @property
     def is_on(self) -> bool | None:
@@ -93,20 +71,16 @@ class AohiWholeDeviceSwitch(CoordinatorEntity[AohiCoordinator], SwitchEntity):
         await self.coordinator.async_request_refresh()
 
 
-class AohiPortSwitch(CoordinatorEntity[AohiCoordinator], SwitchEntity):
+class AohiPortSwitch(AohiEntity, SwitchEntity):
     """On/off switch for a single USB port."""
-
-    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any], port: str
     ) -> None:
-        super().__init__(coordinator)
-        self._sn = sn
+        super().__init__(coordinator, sn, device)
         self._port = port
         self._attr_name = f"Port {port}"
         self._attr_unique_id = f"{sn}_port_{port}"
-        self._attr_device_info = device_info(sn, device)
 
     def _port_data(self) -> dict[str, Any] | None:
         status = self.coordinator.data.get(self._sn)

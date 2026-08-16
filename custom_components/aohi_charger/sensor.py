@@ -18,11 +18,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import ALL_PORTS, DOMAIN, signal_new_device
 from .coordinator import AohiCoordinator
-from .switch import device_info
+from .entity import AohiEntity
 
 
 def _build_entities(
@@ -62,10 +61,9 @@ async def async_setup_entry(
     )
 
 
-class AohiPortPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
+class AohiPortPowerSensor(AohiEntity, SensorEntity):
     """Live power draw of a single USB port."""
 
-    _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -73,12 +71,10 @@ class AohiPortPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
     def __init__(
         self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any], port: str
     ) -> None:
-        super().__init__(coordinator)
-        self._sn = sn
+        super().__init__(coordinator, sn, device)
         self._port = port
         self._attr_name = f"Port {port} Power"
         self._attr_unique_id = f"{sn}_port_{port}_power"
-        self._attr_device_info = device_info(sn, device)
 
     @property
     def native_value(self) -> float | None:
@@ -94,20 +90,17 @@ class AohiPortPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
         return None
 
 
-class AohiTemperatureSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
+class AohiTemperatureSensor(AohiEntity, SensorEntity):
     """Internal temperature of the charger."""
 
-    _attr_has_entity_name = True
     _attr_name = "Temperature"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
-        super().__init__(coordinator)
-        self._sn = sn
+        super().__init__(coordinator, sn, device)
         self._attr_unique_id = f"{sn}_temperature"
-        self._attr_device_info = device_info(sn, device)
 
     @property
     def native_value(self) -> float | None:
@@ -118,20 +111,17 @@ class AohiTemperatureSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
         return status.get("batTemp") if status else None
 
 
-class AohiTotalPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
+class AohiTotalPowerSensor(AohiEntity, SensorEntity):
     """Total output power across all ports."""
 
-    _attr_has_entity_name = True
     _attr_name = "Total Power"
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfPower.WATT
 
     def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
-        super().__init__(coordinator)
-        self._sn = sn
+        super().__init__(coordinator, sn, device)
         self._attr_unique_id = f"{sn}_total_power"
-        self._attr_device_info = device_info(sn, device)
 
     @property
     def native_value(self) -> float | None:
@@ -142,10 +132,9 @@ class AohiTotalPowerSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
         return status.get("allPower") if status else None
 
 
-class AohiSignalStrengthSensor(CoordinatorEntity[AohiCoordinator], SensorEntity):
+class AohiSignalStrengthSensor(AohiEntity, SensorEntity):
     """WiFi signal strength (RSSI) of the charger."""
 
-    _attr_has_entity_name = True
     _attr_name = "Signal Strength"
     _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -153,10 +142,8 @@ class AohiSignalStrengthSensor(CoordinatorEntity[AohiCoordinator], SensorEntity)
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: AohiCoordinator, sn: str, device: dict[str, Any]) -> None:
-        super().__init__(coordinator)
-        self._sn = sn
+        super().__init__(coordinator, sn, device)
         self._attr_unique_id = f"{sn}_rssi"
-        self._attr_device_info = device_info(sn, device)
 
     @property
     def native_value(self) -> float | None:
