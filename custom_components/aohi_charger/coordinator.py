@@ -35,6 +35,7 @@ class AohiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.client = client
         self.devices = devices
         self._signal_new_device = signal_new_device(entry_id)
+        self._unlisted: set[str] = set()
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         try:
@@ -42,8 +43,10 @@ class AohiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except AohiApiError as err:
             raise UpdateFailed(str(err)) from err
 
+        found_by_sn = {device["sn"]: device for device in found}
+
         new_devices = {
-            device["sn"]: device for device in found if device["sn"] not in self.devices
+            sn: device for sn, device in found_by_sn.items() if sn not in self.devices
         }
         if new_devices:
             _LOGGER.info(
@@ -55,12 +58,40 @@ class AohiCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             await self.client.async_subscribe_devices(list(new_devices))
             async_dispatcher_send(self.hass, self._signal_new_device, new_devices)
 
-        sns = list(self.devices)
-        try:
-            results = await asyncio.gather(*(self._async_device_data(sn) for sn in sns))
-        except AohiApiError as err:
-            raise UpdateFailed(str(err)) from err
-        return dict(zip(sns, results, strict=True))
+        # A device that has left the account (or, locally, gone offline) answers
+        # nothing, so polling it times out and fails the whole update -- taking
+        # every other charger's entities down with it. Skip it instead. Its
+        # entities stay put and simply report no state; removing them is the
+        # user's call, from the device page.
+        unlisted = self.devices.keys() - found_by_sn.keys()
+        for sn in unlisted - self._unlisted:
+            _LOGGER.info("AOHI device %s is no longer listed; it will not be polled", sn)
+        self._unlisted = unlisted
+
+        sns = [sn for sn in self.devices if sn not in unlisted]
+        results = await asyncio.gather(
+            *(self._async_device_data(sn) for sn in sns), return_exceptions=True
+        )
+
+        data: dict[str, dict[str, Any]] = {}
+        failures: list[str] = []
+        for sn, result in zip(sns, results, strict=True):
+            if isinstance(result, AohiApiError):
+                failures.append(f"{sn}: {result}")
+            elif isinstance(result, BaseException):
+                raise result
+            else:
+                data[sn] = result
+
+        # One silent charger must not take the whole entry down with it: an
+        # unplugged device answers nothing, and failing here would strand every
+        # other charger on the account. Nothing answering at all is different --
+        # that is the broker link itself, which is worth retrying as a unit.
+        if failures and not data:
+            raise UpdateFailed("; ".join(failures))
+        for failure in failures:
+            _LOGGER.debug("AOHI device did not answer this poll (%s)", failure)
+        return data
 
     async def _async_device_data(self, sn: str) -> dict[str, Any]:
         """Fetch one device's status, enriched with its device/WiFi info.
