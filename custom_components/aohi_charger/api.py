@@ -274,6 +274,21 @@ class AohiApiClient:
         self._mqtt_connected.clear()
         self._known_sns = set(device_sns)
 
+        def dispatch(func, *args) -> None:
+            """Hand work to the event loop from paho's network thread.
+
+            On shutdown the loop closes while that thread is still running, so
+            whatever arrives next raises "Event loop is closed" and paho logs it
+            as an uncaught thread exception -- a red herring in the log at
+            exactly the moment someone is reading it. Checking is_closed() first
+            would still race; by the time a late callback lands there is nothing
+            left to deliver it to, so drop it.
+            """
+            try:
+                loop.call_soon_threadsafe(func, *args)
+            except RuntimeError:
+                _LOGGER.debug("Event loop is gone; dropping a late MQTT callback")
+
         def on_connect(client, userdata, flags, rc):
             if rc != 0:
                 _LOGGER.error("AOHI MQTT connect failed: rc=%s", rc)
@@ -283,7 +298,7 @@ class AohiApiClient:
             for sn in self._known_sns:
                 client.subscribe(f"dev/I4SEASON/{sn}/command/reply")
                 client.subscribe(f"dev/I4SEASON/{sn}/notify")
-            loop.call_soon_threadsafe(self._mqtt_connected.set)
+            dispatch(self._mqtt_connected.set)
 
         def on_disconnect(client, userdata, rc):
             # Logged loudly on purpose: a silent drop here is indistinguishable
@@ -295,10 +310,10 @@ class AohiApiClient:
                 )
             else:
                 _LOGGER.debug("AOHI MQTT disconnected cleanly")
-            loop.call_soon_threadsafe(self._mqtt_connected.clear)
+            dispatch(self._mqtt_connected.clear)
 
         def on_message(client, userdata, msg):
-            loop.call_soon_threadsafe(self._handle_message, msg.topic, msg.payload)
+            dispatch(self._handle_message, msg.topic, msg.payload)
 
         client.on_connect = on_connect
         client.on_disconnect = on_disconnect
