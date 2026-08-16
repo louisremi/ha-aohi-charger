@@ -22,21 +22,29 @@ Confirmed as documented by [atc1441](https://github.com/atc1441/AOHi_280W_Charge
 `0x55AA` framing, running-sum checksum, big-endian TX / little-endian RX lengths, the GATT UUIDs,
 and the `cmd 0x01` / `0x09` payload field offsets.
 
-**The charger only advertises BLE in pairing mode, and a factory reset is what makes a write
-stick.** A short button press also produces a BLE-advertising, connectable device that reads and
-acknowledges normally — but `SetCloudHost` written in that state is **accepted and then discarded**.
-Every provisioning experiment really does cost a full reset-and-re-add cycle.
+**`SetCloudHost` on its own does nothing.** It is acknowledged and then discarded. The charger
+commits new endpoints only as part of completing its WiFi setup, so `SetCloudHost` (`0x10`) must be
+followed by `ConnectWiFi` (`0x05`) in the same session:
 
-This was established the expensive way. Two `SetCloudHost` writes were made after a short press,
-both acknowledged (see below), the second with known-good values. In between, the charger was
-power-cycled. It returned to its previous server every time, and the newly written host1 — plain
-HTTP, so no transport subtleties apply — was never contacted at all. A charger that had genuinely
-stored the new host1 would at minimum have attempted the REST bootstrap against it.
+```
+0x10  SetCloudHost   host1[39] + host2[39] + host3[39]   (117 bytes)
+0x05  ConnectWiFi    ssid[33]  + password[33]            (66 bytes)
+```
 
-> An earlier revision of this file claimed the opposite: that a short press preserves the
-> configuration and lets the endpoints simply be rewritten. That was inferred from the charger
-> staying on its old server, which is equally consistent with the write being ignored — and it
-> was. Left here because the mistaken reading is the tempting one.
+`ConnectWiFi` uses the same field layout as the first 66 bytes of the `0x09` reply, so an
+already-provisioned charger can be re-pointed by reading its credentials back and sending them
+straight in — no factory reset, and no need to know the WiFi password.
+
+This was established the expensive way. Two `SetCloudHost` writes were made without a following
+`ConnectWiFi`, both acknowledged, the second with known-good values, with a power-cycle in between.
+The charger returned to its previous server every time, and the newly written host1 — plain HTTP,
+so no transport subtleties apply — was never contacted at all.
+
+> Two earlier readings of this were wrong and are worth recording. First, that a short press
+> preserves the configuration and lets endpoints simply be rewritten. Then, that a factory reset is
+> what makes a write stick. Both were inferred from the charger staying on its old server, which is
+> equally consistent with the write being ignored — which is what was actually happening. The
+> acknowledgement in between made the write look successful and misled both readings.
 
 **`SetCloudHost` (`0x10`) is acknowledged regardless of whether it is honoured**, with an empty
 reply frame:
@@ -50,10 +58,12 @@ Worth waiting for, but **the acknowledgement does not mean the value was stored*
 just the same when the write is subsequently discarded. It only proves the frame was well formed
 and reached the device.
 
-**New endpoints take effect only on reboot**, so a charger that has not been power-cycled will
-still be talking to its old server. Combined with the above, "nothing arrived at the new server"
-has three distinct causes worth separating: not rebooted, rebooted but the write was discarded
-(no factory reset), or stored correctly but host2 was not `wss://`.
+**New endpoints take effect only once the charger reconnects**, so one that has not completed WiFi
+setup or been power-cycled will still be talking to its old server. Combined with the above,
+"nothing arrived at the new server" has three distinct causes worth separating: the write was
+discarded because no `ConnectWiFi` followed it; it was stored but the charger has not reconnected
+yet; or it was stored correctly but host2 was not `wss://`. Only the third leaves any trace at the
+new server, and only on the MQTT leg — which is why host1 is the useful thing to watch.
 
 **No command reads the current cloud host back.** `0x02, 0x06, 0x07, 0x08, 0x0A, 0x0B, 0x0D, 0x0E,
 0x0F, 0x11` were all probed with an empty payload and none replied. This was re-tested on firmware
