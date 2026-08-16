@@ -22,13 +22,32 @@ Confirmed as documented by [atc1441](https://github.com/atc1441/AOHi_280W_Charge
 `0x55AA` framing, running-sum checksum, big-endian TX / little-endian RX lengths, the GATT UUIDs,
 and the `cmd 0x01` / `0x09` payload field offsets.
 
-**The charger only advertises BLE in pairing mode**, which is reached by a factory reset. There is
-no way to reach a provisioned, working charger over BLE, so every provisioning experiment costs a
-full reset-and-re-add cycle.
+**The charger only advertises BLE in pairing mode**, but reaching pairing mode is cheaper than
+first assumed: a **short button press is enough, and it preserves the stored configuration**. A
+charger put into pairing mode this way stays connected to whatever server it was already using,
+and can simply be rewritten. Only a full factory reset returns it to AOHI's cloud.
+
+This supersedes the earlier note that every provisioning experiment costs a full reset-and-re-add
+cycle. It does not.
+
+**`SetCloudHost` (`0x10`) is acknowledged**, with an empty reply frame:
+
+```
+TX  55 AA 01 07 10 00 00 75 <117-byte payload> FF
+RX  55 AA 00 00 10 00 00 00 0F                      cmd=0x10 len=0
+```
+
+Worth waiting for — the acknowledgement is the only evidence the write landed.
+
+**New endpoints take effect only on reboot.** The charger keeps running its current session against
+the old server until power-cycled, so "nothing arrived at the new server" does not mean the write
+failed.
 
 **No command reads the current cloud host back.** `0x02, 0x06, 0x07, 0x08, 0x0A, 0x0B, 0x0D, 0x0E,
-0x0F, 0x11` were all probed with an empty payload and none replied. Restoring the factory
-endpoints is therefore done by factory reset and re-adding in the app, which rewrites them.
+0x0F, 0x11` were all probed with an empty payload and none replied. This was re-tested on firmware
+1.0.16 with `0x02, 0x06, 0x0E, 0x0F, 0x11` and again produced no reply of any kind, so the question
+is settled: restoring the factory endpoints is done by factory reset and re-adding in the app,
+which rewrites them.
 
 ## Cloud bootstrap sequence
 

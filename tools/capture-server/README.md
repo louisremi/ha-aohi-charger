@@ -18,8 +18,8 @@ records is the input for building a real local server.
 docker compose up --build
 ```
 
-Then use [the BLE provisioning tool](../aohi-ble-provisioning.html) to point the charger at this
-machine:
+Then use [the BLE provisioning tool](https://louisremi.github.io/ha-aohi-local-server/) to point
+the charger at this machine:
 
 | Field | Value |
 |---|---|
